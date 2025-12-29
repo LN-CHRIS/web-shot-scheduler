@@ -10,6 +10,18 @@ interface SchedulerConfig {
   height: number;
 }
 
+const requestPermissions = async () => {
+  try {
+    // Request permission by attempting to create a test file
+    const result = await Filesystem.requestPermissions();
+    console.log('Permission result:', result);
+    return result.publicStorage === 'granted';
+  } catch (error) {
+    console.error('Permission request failed:', error);
+    return false;
+  }
+};
+
 export const useScreenshotScheduler = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [lastCapture, setLastCapture] = useState<string | null>(null);
@@ -75,8 +87,19 @@ export const useScreenshotScheduler = () => {
     }
   }, []);
 
-  const startSchedule = useCallback((config: SchedulerConfig) => {
+  const startSchedule = useCallback(async (config: SchedulerConfig) => {
     if (isRunning) return;
+
+    // Request permissions first
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) {
+      toast({
+        title: "Permission Denied",
+        description: "Storage permission is required to save screenshots",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsRunning(true);
     setCaptureCount(0);
