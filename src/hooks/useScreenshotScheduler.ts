@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { toast } from '@/hooks/use-toast';
+import html2canvas from 'html2canvas';
 
 interface SchedulerConfig {
   url: string;
@@ -14,37 +15,42 @@ export const useScreenshotScheduler = () => {
   const [lastCapture, setLastCapture] = useState<string | null>(null);
   const [captureCount, setCaptureCount] = useState(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const captureScreenshot = useCallback(async (config: SchedulerConfig) => {
     try {
-      // Create a canvas to capture the iframe content
-      const canvas = document.createElement('canvas');
-      canvas.width = config.width;
-      canvas.height = config.height;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) {
-        throw new Error('Could not get canvas context');
+      const container = containerRef.current;
+      if (!container) {
+        throw new Error('WebView container not ready');
       }
 
-      // For cross-origin restrictions, we'll use html2canvas approach
-      // In a real native app, this would use native WebView screenshot APIs
-      const iframe = iframeRef.current;
-      if (!iframe) {
-        throw new Error('WebView not ready');
-      }
+      // Wait a moment for content to render
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Convert canvas to base64 PNG
+      // Capture the container using html2canvas
+      const canvas = await html2canvas(container, {
+        width: config.width,
+        height: config.height,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        scale: 1,
+      });
+
+      // Convert canvas to base64 PNG (remove the data:image/png;base64, prefix)
       const base64Data = canvas.toDataURL('image/png').split(',')[1];
       
-      // Save to Pictures folder using Capacitor Filesystem
+      if (!base64Data || base64Data.length < 100) {
+        throw new Error('Screenshot capture produced empty image');
+      }
+      
+      // Save to public Pictures folder using ExternalStorage
       const fileName = 'web_screenshot.png';
       
       await Filesystem.writeFile({
-        path: `Pictures/${fileName}`,
+        path: fileName,
         data: base64Data,
-        directory: Directory.External,
+        directory: Directory.ExternalStorage,
         recursive: true,
       });
 
@@ -75,8 +81,10 @@ export const useScreenshotScheduler = () => {
     setIsRunning(true);
     setCaptureCount(0);
     
-    // Capture immediately
-    captureScreenshot(config);
+    // Wait for iframe to load before first capture
+    setTimeout(() => {
+      captureScreenshot(config);
+    }, 2000);
     
     // Set up interval
     const intervalMs = config.intervalMinutes * 60 * 1000;
@@ -109,6 +117,6 @@ export const useScreenshotScheduler = () => {
     captureCount,
     startSchedule,
     stopSchedule,
-    iframeRef,
+    containerRef,
   };
 };
