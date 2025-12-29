@@ -10,21 +10,23 @@ interface SchedulerConfig {
   height: number;
 }
 
-const FOLDER_NAME = 'WebScreenshots';
+const FOLDER_PATH = 'Pictures/WebScreenshots';
 const FILE_NAME = 'screenshot.png';
 
 // Ensure the folder exists in Pictures directory
 const ensureFolder = async (): Promise<void> => {
   try {
     await Filesystem.mkdir({
-      path: FOLDER_NAME,
+      path: FOLDER_PATH,
       directory: Directory.ExternalStorage,
       recursive: true,
     });
   } catch (error: any) {
-    // Folder already exists - that's fine
-    if (!error.message?.includes('exists')) {
-      throw error;
+    // Ignore "directory exists" errors
+    const msg = error?.message?.toLowerCase() || '';
+    if (!msg.includes('exist') && !msg.includes('already')) {
+      console.warn('mkdir warning:', error);
+      // Continue anyway - writeFile might still work
     }
   }
 };
@@ -68,7 +70,7 @@ export const useScreenshotScheduler = () => {
       await ensureFolder();
       
       await Filesystem.writeFile({
-        path: `${FOLDER_NAME}/${FILE_NAME}`,
+        path: `${FOLDER_PATH}/${FILE_NAME}`,
         data: base64Data,
         directory: Directory.ExternalStorage,
       });
@@ -79,7 +81,7 @@ export const useScreenshotScheduler = () => {
       
       toast({
         title: "Screenshot captured",
-        description: `Saved to Pictures/${FOLDER_NAME}/${FILE_NAME} at ${now}`,
+        description: `Saved to ${FOLDER_PATH}/${FILE_NAME} at ${now}`,
       });
       
       return true;
