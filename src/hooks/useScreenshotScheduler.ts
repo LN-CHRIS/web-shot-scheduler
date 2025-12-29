@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Media } from '@capacitor-community/media';
 import { toast } from '@/hooks/use-toast';
 import html2canvas from 'html2canvas';
 
@@ -9,8 +9,6 @@ interface SchedulerConfig {
   width: number;
   height: number;
 }
-
-// No permissions needed for Documents directory
 
 export const useScreenshotScheduler = () => {
   const [isRunning, setIsRunning] = useState(false);
@@ -39,21 +37,17 @@ export const useScreenshotScheduler = () => {
         scale: 1,
       });
 
-      // Convert canvas to base64 PNG (remove the data:image/png;base64, prefix)
-      const base64Data = canvas.toDataURL('image/png').split(',')[1];
+      // Convert canvas to base64 PNG with data URI prefix
+      const base64DataUri = canvas.toDataURL('image/png');
       
-      if (!base64Data || base64Data.length < 100) {
+      if (!base64DataUri || base64DataUri.length < 100) {
         throw new Error('Screenshot capture produced empty image');
       }
       
-      // Save to app's Documents directory (no permissions required)
-      const fileName = 'web_screenshot.png';
-      
-      await Filesystem.writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.Documents,
-        recursive: true,
+      // Save to public Pictures folder using Media plugin (uses MediaStore API)
+      await Media.savePhoto({
+        path: base64DataUri,
+        albumIdentifier: undefined, // Save to default Pictures folder
       });
 
       const now = new Date().toLocaleTimeString();
@@ -62,7 +56,7 @@ export const useScreenshotScheduler = () => {
       
       toast({
         title: "Screenshot captured",
-        description: `Saved ${fileName} at ${now}`,
+        description: `Saved to Pictures folder at ${now}`,
       });
       
       return true;
