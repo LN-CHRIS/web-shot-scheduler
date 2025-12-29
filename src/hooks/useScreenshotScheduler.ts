@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Media } from '@capacitor-community/media';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { toast } from '@/hooks/use-toast';
 import html2canvas from 'html2canvas';
 
@@ -10,27 +10,23 @@ interface SchedulerConfig {
   height: number;
 }
 
-const ALBUM_NAME = 'Web Screenshots';
+const FOLDER_NAME = 'WebScreenshots';
+const FILE_NAME = 'screenshot.png';
 
-// Get or create the album for storing screenshots
-const getOrCreateAlbum = async (): Promise<string> => {
-  const { albums } = await Media.getAlbums();
-  const existing = albums.find(a => a.name === ALBUM_NAME);
-  
-  if (existing) {
-    return existing.identifier;
+// Ensure the folder exists in Pictures directory
+const ensureFolder = async (): Promise<void> => {
+  try {
+    await Filesystem.mkdir({
+      path: FOLDER_NAME,
+      directory: Directory.ExternalStorage,
+      recursive: true,
+    });
+  } catch (error: any) {
+    // Folder already exists - that's fine
+    if (!error.message?.includes('exists')) {
+      throw error;
+    }
   }
-  
-  // Create new album
-  await Media.createAlbum({ name: ALBUM_NAME });
-  const { albums: updatedAlbums } = await Media.getAlbums();
-  const created = updatedAlbums.find(a => a.name === ALBUM_NAME);
-  
-  if (!created) {
-    throw new Error('Failed to create album');
-  }
-  
-  return created.identifier;
 };
 
 export const useScreenshotScheduler = () => {
@@ -58,20 +54,23 @@ export const useScreenshotScheduler = () => {
         allowTaint: true,
         logging: false,
         scale: 1,
+        backgroundColor: '#ffffff',
       });
 
-      // Convert canvas to base64 PNG with data URI prefix
-      const base64DataUri = canvas.toDataURL('image/png');
+      // Get raw base64 PNG data (without data URI prefix)
+      const base64Data = canvas.toDataURL('image/png').split(',')[1];
       
-      if (!base64DataUri || base64DataUri.length < 100) {
+      if (!base64Data || base64Data.length < 100) {
         throw new Error('Screenshot capture produced empty image');
       }
       
-      // Get or create album, then save photo
-      const albumId = await getOrCreateAlbum();
-      await Media.savePhoto({
-        path: base64DataUri,
-        albumIdentifier: albumId,
+      // Ensure folder exists and save file
+      await ensureFolder();
+      
+      await Filesystem.writeFile({
+        path: `${FOLDER_NAME}/${FILE_NAME}`,
+        data: base64Data,
+        directory: Directory.ExternalStorage,
       });
 
       const now = new Date().toLocaleTimeString();
@@ -80,7 +79,7 @@ export const useScreenshotScheduler = () => {
       
       toast({
         title: "Screenshot captured",
-        description: `Saved to "${ALBUM_NAME}" at ${now}`,
+        description: `Saved to Pictures/${FOLDER_NAME}/${FILE_NAME} at ${now}`,
       });
       
       return true;
