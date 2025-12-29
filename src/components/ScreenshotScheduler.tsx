@@ -7,10 +7,10 @@ import { useScreenshotScheduler } from '@/hooks/useScreenshotScheduler';
 import { Camera, Play, Square, Globe, Clock, Maximize2 } from 'lucide-react';
 
 export const ScreenshotScheduler = () => {
-  const [url, setUrl] = useState('https://example.com');
+  const [url, setUrl] = useState('https://dakboard.com/screen/uuid/695145eb-102857-3050-96393eac34cb');
   const [intervalMinutes, setIntervalMinutes] = useState(5);
-  const [width, setWidth] = useState(1280);
-  const [height, setHeight] = useState(720);
+  const [width, setWidth] = useState(3200);
+  const [height, setHeight] = useState(1800);
 
   const { 
     isRunning, 
