@@ -10,17 +10,7 @@ interface SchedulerConfig {
   height: number;
 }
 
-const requestPermissions = async () => {
-  try {
-    // Request permission by attempting to create a test file
-    const result = await Filesystem.requestPermissions();
-    console.log('Permission result:', result);
-    return result.publicStorage === 'granted';
-  } catch (error) {
-    console.error('Permission request failed:', error);
-    return false;
-  }
-};
+// No permissions needed for Documents directory
 
 export const useScreenshotScheduler = () => {
   const [isRunning, setIsRunning] = useState(false);
@@ -56,13 +46,13 @@ export const useScreenshotScheduler = () => {
         throw new Error('Screenshot capture produced empty image');
       }
       
-      // Save to public Pictures folder using ExternalStorage
+      // Save to app's Documents directory (no permissions required)
       const fileName = 'web_screenshot.png';
       
       await Filesystem.writeFile({
         path: fileName,
         data: base64Data,
-        directory: Directory.ExternalStorage,
+        directory: Directory.Documents,
         recursive: true,
       });
 
@@ -72,7 +62,7 @@ export const useScreenshotScheduler = () => {
       
       toast({
         title: "Screenshot captured",
-        description: `Saved to Pictures/${fileName} at ${now}`,
+        description: `Saved ${fileName} at ${now}`,
       });
       
       return true;
@@ -89,17 +79,6 @@ export const useScreenshotScheduler = () => {
 
   const startSchedule = useCallback(async (config: SchedulerConfig) => {
     if (isRunning) return;
-
-    // Request permissions first
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) {
-      toast({
-        title: "Permission Denied",
-        description: "Storage permission is required to save screenshots",
-        variant: "destructive",
-      });
-      return;
-    }
 
     setIsRunning(true);
     setCaptureCount(0);
