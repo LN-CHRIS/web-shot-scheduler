@@ -10,6 +10,29 @@ interface SchedulerConfig {
   height: number;
 }
 
+const ALBUM_NAME = 'Web Screenshots';
+
+// Get or create the album for storing screenshots
+const getOrCreateAlbum = async (): Promise<string> => {
+  const { albums } = await Media.getAlbums();
+  const existing = albums.find(a => a.name === ALBUM_NAME);
+  
+  if (existing) {
+    return existing.identifier;
+  }
+  
+  // Create new album
+  await Media.createAlbum({ name: ALBUM_NAME });
+  const { albums: updatedAlbums } = await Media.getAlbums();
+  const created = updatedAlbums.find(a => a.name === ALBUM_NAME);
+  
+  if (!created) {
+    throw new Error('Failed to create album');
+  }
+  
+  return created.identifier;
+};
+
 export const useScreenshotScheduler = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [lastCapture, setLastCapture] = useState<string | null>(null);
@@ -44,10 +67,11 @@ export const useScreenshotScheduler = () => {
         throw new Error('Screenshot capture produced empty image');
       }
       
-      // Save to public Pictures folder using Media plugin (uses MediaStore API)
+      // Get or create album, then save photo
+      const albumId = await getOrCreateAlbum();
       await Media.savePhoto({
         path: base64DataUri,
-        albumIdentifier: undefined, // Save to default Pictures folder
+        albumIdentifier: albumId,
       });
 
       const now = new Date().toLocaleTimeString();
@@ -56,7 +80,7 @@ export const useScreenshotScheduler = () => {
       
       toast({
         title: "Screenshot captured",
-        description: `Saved to Pictures folder at ${now}`,
+        description: `Saved to "${ALBUM_NAME}" at ${now}`,
       });
       
       return true;
