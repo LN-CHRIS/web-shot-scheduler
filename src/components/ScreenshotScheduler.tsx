@@ -35,14 +35,17 @@ export const ScreenshotScheduler = () => {
     <div className="min-h-screen bg-background p-4 pb-8">
       <div className="max-w-md mx-auto space-y-4">
         {/* Header */}
-        <div className="flex items-center gap-3 py-4">
-          <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
-            <Camera className="w-6 h-6 text-primary-foreground" />
+        <div className="flex items-center justify-between py-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
+              <Camera className="w-6 h-6 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-foreground">Web Screenshot</h1>
+              <p className="text-sm text-muted-foreground">Scheduled capture tool</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">Web Screenshot</h1>
-            <p className="text-sm text-muted-foreground">Scheduled capture tool</p>
-          </div>
+          <span className="text-xs text-muted-foreground font-mono">v0.1</span>
         </div>
 
         {/* Status Card */}

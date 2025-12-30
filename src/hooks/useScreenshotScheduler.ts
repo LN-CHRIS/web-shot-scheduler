@@ -30,12 +30,17 @@ const ensureFolder = async (): Promise<void> => {
 };
 
 export const useScreenshotScheduler = () => {
+  // ALL useState hooks MUST be at the top, in consistent order
   const [isRunning, setIsRunning] = useState(false);
   const [lastCapture, setLastCapture] = useState<string | null>(null);
   const [captureCount, setCaptureCount] = useState(0);
+  const [config, setConfig] = useState<SchedulerConfig | null>(null);
+  
+  // ALL useRef hooks
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const pendingCaptureRef = useRef<boolean>(false);
+  const iframeLoadedRef = useRef<boolean>(false);
 
   // Save base64 screenshot to filesystem
   const saveScreenshot = useCallback(async (base64Data: string) => {
@@ -134,18 +139,16 @@ export const useScreenshotScheduler = () => {
     }
   }, []);
 
-  const [config, setConfig] = useState<SchedulerConfig | null>(null);
-  const iframeLoadedRef = useRef<boolean>(false);
-
   // Called when iframe finishes loading
   const onIframeLoad = useCallback(() => {
-    console.log('Iframe loaded');
+    console.log('Iframe loaded, waiting before first capture...');
     iframeLoadedRef.current = true;
     
-    // Capture immediately after load
+    // Capture immediately after load with delay for page to render
     setTimeout(() => {
+      console.log('Triggering first capture');
       captureScreenshot();
-    }, 1000);
+    }, 2000);
   }, [captureScreenshot]);
 
   const startSchedule = useCallback(async (newConfig: SchedulerConfig) => {
