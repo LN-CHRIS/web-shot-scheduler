@@ -12,6 +12,7 @@ interface SchedulerConfig {
 
 const FOLDER_PATH = 'Pictures/WebScreenshots';
 const FILE_NAME = 'screenshot.png';
+const ERROR_LOG_FILE = 'error_log.txt';
 
 // Ensure the folder exists in Pictures directory
 const ensureFolder = async (): Promise<void> => {
@@ -29,6 +30,40 @@ const ensureFolder = async (): Promise<void> => {
   }
 };
 
+// Append error to log file in the same folder as screenshots
+const appendErrorLog = async (message: string): Promise<void> => {
+  try {
+    await ensureFolder();
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] ${message}\n`;
+    
+    // Try to read existing log first
+    let existingContent = '';
+    try {
+      const existing = await Filesystem.readFile({
+        path: `${FOLDER_PATH}/${ERROR_LOG_FILE}`,
+        directory: Directory.ExternalStorage,
+      });
+      existingContent = typeof existing.data === 'string' ? existing.data : '';
+    } catch {
+      // File doesn't exist yet, that's fine
+    }
+    
+    // Append new error (keep last 100 entries max)
+    const lines = existingContent.split('\n').filter(l => l.trim());
+    const recentLines = lines.slice(-99);
+    const newContent = [...recentLines, logEntry.trim()].join('\n') + '\n';
+    
+    await Filesystem.writeFile({
+      path: `${FOLDER_PATH}/${ERROR_LOG_FILE}`,
+      data: newContent,
+      directory: Directory.ExternalStorage,
+    });
+  } catch (e) {
+    console.error('Failed to write error log:', e);
+  }
+};
+
 export const useScreenshotScheduler = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [lastCapture, setLastCapture] = useState<string | null>(null);
@@ -41,10 +76,15 @@ export const useScreenshotScheduler = () => {
   const pendingCaptureRef = useRef<boolean>(false);
   const webViewReadyRef = useRef<boolean>(false);
 
-  const addLog = useCallback((message: string) => {
+  const addLog = useCallback((message: string, isError: boolean = false) => {
     const timestamp = new Date().toLocaleTimeString();
     setDebugLog(prev => [...prev.slice(-9), `[${timestamp}] ${message}`]);
     console.log(`[Screenshot] ${message}`);
+    
+    // Write errors to file
+    if (isError) {
+      appendErrorLog(message);
+    }
   }, []);
 
   // Save base64 screenshot to filesystem (no resizing needed - native captures at exact size)
@@ -81,7 +121,7 @@ export const useScreenshotScheduler = () => {
       return true;
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`Save FAILED: ${msg}`);
+      addLog(`Save FAILED: ${msg}`, true);
       console.error('Screenshot save failed:', error);
       toast({
         title: "Save failed",
@@ -127,7 +167,7 @@ export const useScreenshotScheduler = () => {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`Capture FAILED: ${msg}`);
+      addLog(`Capture FAILED: ${msg}`, true);
       console.error('Capture failed:', error);
       toast({
         title: "Capture failed",
