@@ -94,8 +94,9 @@ export const useScreenshotScheduler = () => {
   }, [addLog]);
 
   // Capture using custom off-screen WebView plugin
-  const captureScreenshot = useCallback(async () => {
-    if (!config) {
+  const captureScreenshot = useCallback(async (captureConfig?: SchedulerConfig) => {
+    const cfg = captureConfig || config;
+    if (!cfg) {
       addLog('No config set');
       return false;
     }
@@ -106,14 +107,14 @@ export const useScreenshotScheduler = () => {
     }
 
     pendingCaptureRef.current = true;
-    addLog(`Capturing ${config.width}x${config.height}...`);
+    addLog(`Capturing ${cfg.width}x${cfg.height}...`);
     
     try {
       // Use custom plugin that creates off-screen WebView at exact dimensions
       const result = await WebViewScreenshot.capture({
-        url: config.url,
-        width: config.width,
-        height: config.height,
+        url: cfg.url,
+        width: cfg.width,
+        height: cfg.height,
         delayMs: 3000, // Wait 3s for page to fully render
       });
       
@@ -148,15 +149,15 @@ export const useScreenshotScheduler = () => {
     setDebugLog([]);
     addLog(`Starting: ${newConfig.url} at ${newConfig.width}x${newConfig.height}`);
     
-    // Trigger first capture immediately
+    // Trigger first capture immediately with the new config
     setTimeout(() => {
-      captureScreenshot();
+      captureScreenshot(newConfig);
     }, 500);
     
     // Set up interval for subsequent captures
     const intervalMs = newConfig.intervalMinutes * 60 * 1000;
     intervalRef.current = setInterval(() => {
-      captureScreenshot();
+      captureScreenshot(newConfig);
     }, intervalMs);
 
     toast({
