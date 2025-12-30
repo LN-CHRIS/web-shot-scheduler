@@ -47,15 +47,46 @@ export const useScreenshotScheduler = () => {
     console.log(`[Screenshot] ${message}`);
   }, []);
 
+  // Resize image to target dimensions
+  const resizeImage = useCallback(async (base64Data: string, targetWidth: number, targetHeight: number): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+        // Draw and scale image to target size
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        // Get base64 without data URL prefix
+        const resizedBase64 = canvas.toDataURL('image/png').split(',')[1];
+        resolve(resizedBase64);
+      };
+      img.onerror = () => reject(new Error('Failed to load image for resize'));
+      const prefix = base64Data.includes(',') ? '' : 'data:image/png;base64,';
+      img.src = prefix + base64Data;
+    });
+  }, []);
+
   // Save base64 screenshot to filesystem
-  const saveScreenshot = useCallback(async (base64Data: string) => {
+  const saveScreenshot = useCallback(async (base64Data: string, width?: number, height?: number) => {
     try {
-      const cleanBase64 = base64Data.includes(',') 
+      let cleanBase64 = base64Data.includes(',') 
         ? base64Data.split(',')[1] 
         : base64Data;
       
       if (!cleanBase64 || cleanBase64.length < 100) {
         throw new Error('Screenshot data is empty or invalid');
+      }
+
+      // Resize if dimensions provided
+      if (width && height) {
+        addLog(`Resizing to ${width}x${height}...`);
+        cleanBase64 = await resizeImage(base64Data, width, height);
       }
       
       addLog(`Saving (${Math.round(cleanBase64.length / 1024)}KB)...`);
@@ -74,7 +105,7 @@ export const useScreenshotScheduler = () => {
       
       toast({
         title: "Screenshot captured",
-        description: `Saved to ${FOLDER_PATH}/${FILE_NAME}`,
+        description: `Saved ${width}x${height} to ${FOLDER_PATH}/${FILE_NAME}`,
       });
       
       pendingCaptureRef.current = false;
@@ -91,7 +122,7 @@ export const useScreenshotScheduler = () => {
       pendingCaptureRef.current = false;
       return false;
     }
-  }, [addLog]);
+  }, [addLog, resizeImage]);
 
   // Capture using native screenshot plugin
   const captureScreenshot = useCallback(async () => {
@@ -113,7 +144,8 @@ export const useScreenshotScheduler = () => {
       
       if (result?.base64) {
         addLog('Screenshot captured');
-        await saveScreenshot(result.base64);
+        // Pass config dimensions for resizing
+        await saveScreenshot(result.base64, config?.width, config?.height);
         return true;
       } else {
         throw new Error('No screenshot data returned');
@@ -130,7 +162,7 @@ export const useScreenshotScheduler = () => {
       pendingCaptureRef.current = false;
       return false;
     }
-  }, [addLog, saveScreenshot]);
+  }, [addLog, saveScreenshot, config]);
 
   const onWebViewLoad = useCallback(() => {
     addLog('WebView loaded, waiting 3s...');

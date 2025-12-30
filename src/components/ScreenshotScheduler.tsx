@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useScreenshotScheduler } from '@/hooks/useScreenshotScheduler';
 import { Camera, Play, Square, Globe, Clock, Maximize2, Zap, X } from 'lucide-react';
 
-const APP_VERSION = 'v0.3';
+const APP_VERSION = 'v0.4';
 
 export const ScreenshotScheduler = () => {
   const [url, setUrl] = useState('https://dakboard.com/screen/uuid/695145eb-102857-3050-96393eac34cb');
