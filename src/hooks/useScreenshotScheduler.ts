@@ -134,26 +134,39 @@ export const useScreenshotScheduler = () => {
     }
   }, []);
 
-  const startSchedule = useCallback(async (config: SchedulerConfig) => {
-    if (isRunning) return;
+  const [config, setConfig] = useState<SchedulerConfig | null>(null);
+  const iframeLoadedRef = useRef<boolean>(false);
 
-    setIsRunning(true);
-    setCaptureCount(0);
+  // Called when iframe finishes loading
+  const onIframeLoad = useCallback(() => {
+    console.log('Iframe loaded');
+    iframeLoadedRef.current = true;
     
-    // Wait for iframe to load before first capture
+    // Capture immediately after load
     setTimeout(() => {
       captureScreenshot();
-    }, 3000);
+    }, 1000);
+  }, [captureScreenshot]);
+
+  const startSchedule = useCallback(async (newConfig: SchedulerConfig) => {
+    if (isRunning) return;
+
+    setConfig(newConfig);
+    setIsRunning(true);
+    setCaptureCount(0);
+    iframeLoadedRef.current = false;
     
-    // Set up interval
-    const intervalMs = config.intervalMinutes * 60 * 1000;
+    // Set up interval (first capture happens on iframe load)
+    const intervalMs = newConfig.intervalMinutes * 60 * 1000;
     intervalRef.current = setInterval(() => {
-      captureScreenshot();
+      if (iframeLoadedRef.current) {
+        captureScreenshot();
+      }
     }, intervalMs);
 
     toast({
       title: "Schedule started",
-      description: `Capturing every ${config.intervalMinutes} minute(s)`,
+      description: `Capturing every ${newConfig.intervalMinutes} minute(s)`,
     });
   }, [isRunning, captureScreenshot]);
 
@@ -178,5 +191,7 @@ export const useScreenshotScheduler = () => {
     startSchedule,
     stopSchedule,
     iframeRef,
+    onIframeLoad,
+    config,
   };
 };
