@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useScreenshotScheduler } from '@/hooks/useScreenshotScheduler';
 import { Camera, Play, Square, Globe, Clock, Maximize2 } from 'lucide-react';
 
+const APP_VERSION = 'v0.1';
+
 export const ScreenshotScheduler = () => {
   const [url, setUrl] = useState('https://dakboard.com/screen/uuid/695145eb-102857-3050-96393eac34cb');
   const [intervalMinutes, setIntervalMinutes] = useState(5);
@@ -45,7 +47,7 @@ export const ScreenshotScheduler = () => {
               <p className="text-sm text-muted-foreground">Scheduled capture tool</p>
             </div>
           </div>
-          <span className="text-xs text-muted-foreground font-mono">v0.1</span>
+          <span className="text-xs text-muted-foreground font-mono">{APP_VERSION}</span>
         </div>
 
         {/* Status Card */}
