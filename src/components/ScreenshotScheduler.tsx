@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useScreenshotScheduler } from '@/hooks/useScreenshotScheduler';
 import { Camera, Play, Square, Globe, Clock, Maximize2, Zap, X } from 'lucide-react';
 
-const APP_VERSION = 'v0.4';
+const APP_VERSION = 'v0.5';
 
 export const ScreenshotScheduler = () => {
   const [url, setUrl] = useState('https://dakboard.com/screen/uuid/695145eb-102857-3050-96393eac34cb');
@@ -20,11 +20,9 @@ export const ScreenshotScheduler = () => {
     captureCount, 
     startSchedule, 
     stopSchedule,
-    onWebViewLoad,
     config,
     debugLog,
     manualCapture,
-    showWebView,
   } = useScreenshotScheduler();
 
   const handleToggle = () => {
@@ -35,54 +33,51 @@ export const ScreenshotScheduler = () => {
     }
   };
 
-  // When running, show fullscreen webview for native screenshot
-  if (showWebView && config) {
+  // Show running status overlay when active (no fullscreen WebView needed)
+  const renderRunningOverlay = () => {
+    if (!isRunning || !config) return null;
+    
     return (
-      <div className="fixed inset-0 z-50 bg-black">
-        {/* Control bar */}
-        <div className="absolute top-0 left-0 right-0 z-10 bg-background/90 backdrop-blur p-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs font-mono">
-              {captureCount} captures | {lastCapture || 'waiting...'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={manualCapture}>
-              <Zap className="w-4 h-4" />
-            </Button>
-            <Button size="sm" variant="destructive" onClick={stopSchedule}>
-              <X className="w-4 h-4 mr-1" />
-              Stop
-            </Button>
-          </div>
-        </div>
-        
-        {/* Debug log overlay */}
-        {debugLog.length > 0 && (
-          <div className="absolute bottom-0 left-0 right-0 z-10 bg-black/80 p-2 max-h-24 overflow-y-auto">
-            <div className="text-xs font-mono text-green-400 space-y-0.5">
-              {debugLog.map((log, i) => (
-                <div key={i}>{log}</div>
-              ))}
+      <Card className="border-green-500/50 bg-green-500/5">
+        <CardContent className="pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-sm font-medium text-green-600">
+                Capturing {config.width}x{config.height}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={manualCapture}>
+                <Zap className="w-4 h-4" />
+              </Button>
+              <Button size="sm" variant="destructive" onClick={stopSchedule}>
+                <X className="w-4 h-4 mr-1" />
+                Stop
+              </Button>
             </div>
           </div>
-        )}
-        
-        {/* Fullscreen iframe - native screenshot will capture this */}
-        <iframe
-          src={config.url}
-          className="w-full h-full border-0 pt-10"
-          title="Screenshot Target"
-          onLoad={onWebViewLoad}
-        />
-      </div>
+          
+          {/* Debug log */}
+          {debugLog.length > 0 && (
+            <div className="bg-black/80 rounded p-2 max-h-24 overflow-y-auto">
+              <div className="text-xs font-mono text-green-400 space-y-0.5">
+                {debugLog.map((log, i) => (
+                  <div key={i}>{log}</div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     );
-  }
+  };
 
   return (
     <div className="min-h-screen bg-background p-4 pb-8">
       <div className="max-w-md mx-auto space-y-4">
+        {/* Running overlay */}
+        {renderRunningOverlay()}
         {/* Header */}
         <div className="flex items-center justify-between py-4">
           <div className="flex items-center gap-3">
@@ -91,7 +86,7 @@ export const ScreenshotScheduler = () => {
             </div>
             <div>
               <h1 className="text-xl font-semibold text-foreground">Web Screenshot</h1>
-              <p className="text-sm text-muted-foreground">Scheduled capture tool</p>
+              <p className="text-sm text-muted-foreground">Off-screen capture</p>
             </div>
           </div>
           <span className="text-xs text-muted-foreground font-mono">{APP_VERSION}</span>
@@ -196,7 +191,7 @@ export const ScreenshotScheduler = () => {
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Note: Screenshot captures device screen resolution
+              Website renders at exact dimensions (off-screen)
             </p>
           </CardContent>
         </Card>
@@ -225,7 +220,7 @@ export const ScreenshotScheduler = () => {
 
         {/* Info */}
         <p className="text-xs text-center text-muted-foreground px-4">
-          Opens fullscreen view and captures using native screenshot.
+          Uses native off-screen WebView at exact resolution.
           Saved to Pictures/WebScreenshots/screenshot.png
         </p>
       </div>
