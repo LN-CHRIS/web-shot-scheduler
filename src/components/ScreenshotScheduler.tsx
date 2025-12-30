@@ -18,7 +18,9 @@ export const ScreenshotScheduler = () => {
     captureCount, 
     startSchedule, 
     stopSchedule,
-    iframeRef 
+    iframeRef,
+    onIframeLoad,
+    config,
   } = useScreenshotScheduler();
 
   const handleToggle = () => {
@@ -167,15 +169,16 @@ export const ScreenshotScheduler = () => {
         </Button>
 
         {/* Hidden iframe for PostMessage capture */}
-        {isRunning && (
+        {isRunning && config && (
           <iframe
             ref={iframeRef}
-            src={url}
+            src={config.url}
             className="fixed -left-[9999px] -top-[9999px]"
-            width={width}
-            height={height}
+            width={config.width}
+            height={config.height}
             title="Capture WebView"
             style={{ border: 'none' }}
+            onLoad={onIframeLoad}
           />
         )}
 
