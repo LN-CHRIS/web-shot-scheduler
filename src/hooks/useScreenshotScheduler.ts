@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import html2canvas from 'html2canvas';
+import { Screenshot } from 'capacitor-screenshot';
 import { toast } from '@/hooks/use-toast';
 
 interface SchedulerConfig {
@@ -35,11 +35,11 @@ export const useScreenshotScheduler = () => {
   const [captureCount, setCaptureCount] = useState(0);
   const [config, setConfig] = useState<SchedulerConfig | null>(null);
   const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [showWebView, setShowWebView] = useState(false);
   
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const pendingCaptureRef = useRef<boolean>(false);
-  const iframeLoadedRef = useRef<boolean>(false);
+  const webViewReadyRef = useRef<boolean>(false);
 
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -58,7 +58,7 @@ export const useScreenshotScheduler = () => {
         throw new Error('Screenshot data is empty or invalid');
       }
       
-      addLog(`Saving screenshot (${Math.round(cleanBase64.length / 1024)}KB)...`);
+      addLog(`Saving (${Math.round(cleanBase64.length / 1024)}KB)...`);
       await ensureFolder();
       
       await Filesystem.writeFile({
@@ -70,7 +70,7 @@ export const useScreenshotScheduler = () => {
       const now = new Date().toLocaleTimeString();
       setLastCapture(now);
       setCaptureCount(prev => prev + 1);
-      addLog(`Saved successfully at ${now}`);
+      addLog(`Saved at ${now}`);
       
       toast({
         title: "Screenshot captured",
@@ -93,36 +93,31 @@ export const useScreenshotScheduler = () => {
     }
   }, [addLog]);
 
-  // Capture the iframe using html2canvas on a container div
+  // Capture using native screenshot plugin
   const captureScreenshot = useCallback(async () => {
-    const container = document.getElementById('screenshot-container');
-    
-    if (!container) {
-      addLog('ERROR: Container not found');
+    if (pendingCaptureRef.current) {
+      addLog('Capture pending, skipping');
       return false;
     }
 
-    if (pendingCaptureRef.current) {
-      addLog('Capture already pending, skipping');
+    if (!webViewReadyRef.current) {
+      addLog('WebView not ready');
       return false;
     }
 
     pendingCaptureRef.current = true;
-    addLog('Starting capture with html2canvas...');
+    addLog('Taking native screenshot...');
     
     try {
-      const canvas = await html2canvas(container, {
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#000000',
-      });
+      const result = await Screenshot.take();
       
-      const dataUrl = canvas.toDataURL('image/png');
-      addLog(`Canvas captured (${canvas.width}x${canvas.height})`);
-      
-      await saveScreenshot(dataUrl);
-      return true;
+      if (result?.base64) {
+        addLog('Screenshot captured');
+        await saveScreenshot(result.base64);
+        return true;
+      } else {
+        throw new Error('No screenshot data returned');
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Capture FAILED: ${msg}`);
@@ -137,12 +132,12 @@ export const useScreenshotScheduler = () => {
     }
   }, [addLog, saveScreenshot]);
 
-  const onIframeLoad = useCallback(() => {
-    addLog('Iframe loaded, waiting 3s before capture...');
-    iframeLoadedRef.current = true;
+  const onWebViewLoad = useCallback(() => {
+    addLog('WebView loaded, waiting 3s...');
+    webViewReadyRef.current = true;
     
     setTimeout(() => {
-      addLog('Triggering first capture');
+      addLog('First capture...');
       captureScreenshot();
     }, 3000);
   }, [captureScreenshot, addLog]);
@@ -152,21 +147,22 @@ export const useScreenshotScheduler = () => {
 
     setConfig(newConfig);
     setIsRunning(true);
+    setShowWebView(true);
     setCaptureCount(0);
     setDebugLog([]);
-    iframeLoadedRef.current = false;
-    addLog(`Starting schedule: ${newConfig.url}`);
+    webViewReadyRef.current = false;
+    addLog(`Starting: ${newConfig.url}`);
     
     const intervalMs = newConfig.intervalMinutes * 60 * 1000;
     intervalRef.current = setInterval(() => {
-      if (iframeLoadedRef.current) {
+      if (webViewReadyRef.current) {
         captureScreenshot();
       }
     }, intervalMs);
 
     toast({
       title: "Schedule started",
-      description: `Capturing every ${newConfig.intervalMinutes} minute(s)`,
+      description: `Every ${newConfig.intervalMinutes} min`,
     });
   }, [isRunning, captureScreenshot, addLog]);
 
@@ -176,24 +172,26 @@ export const useScreenshotScheduler = () => {
       intervalRef.current = null;
     }
     setIsRunning(false);
+    setShowWebView(false);
     pendingCaptureRef.current = false;
-    addLog('Schedule stopped');
+    webViewReadyRef.current = false;
+    addLog('Stopped');
     
     toast({
       title: "Schedule stopped",
-      description: `Total captures: ${captureCount}`,
+      description: `Total: ${captureCount}`,
     });
   }, [captureCount, addLog]);
 
   const manualCapture = useCallback(() => {
-    if (iframeLoadedRef.current) {
-      addLog('Manual capture triggered');
+    if (webViewReadyRef.current) {
+      addLog('Manual capture');
       captureScreenshot();
     } else {
-      addLog('Cannot capture - iframe not loaded');
+      addLog('Not ready');
       toast({
         title: "Not ready",
-        description: "Iframe not loaded yet",
+        description: "WebView not loaded",
         variant: "destructive",
       });
     }
@@ -205,10 +203,10 @@ export const useScreenshotScheduler = () => {
     captureCount,
     startSchedule,
     stopSchedule,
-    iframeRef,
-    onIframeLoad,
+    onWebViewLoad,
     config,
     debugLog,
     manualCapture,
+    showWebView,
   };
 };

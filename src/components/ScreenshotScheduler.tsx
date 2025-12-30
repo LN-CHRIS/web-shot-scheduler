@@ -4,9 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useScreenshotScheduler } from '@/hooks/useScreenshotScheduler';
-import { Camera, Play, Square, Globe, Clock, Maximize2, Zap } from 'lucide-react';
+import { Camera, Play, Square, Globe, Clock, Maximize2, Zap, X } from 'lucide-react';
 
-const APP_VERSION = 'v0.2';
+const APP_VERSION = 'v0.3';
 
 export const ScreenshotScheduler = () => {
   const [url, setUrl] = useState('https://dakboard.com/screen/uuid/695145eb-102857-3050-96393eac34cb');
@@ -20,11 +20,11 @@ export const ScreenshotScheduler = () => {
     captureCount, 
     startSchedule, 
     stopSchedule,
-    iframeRef,
-    onIframeLoad,
+    onWebViewLoad,
     config,
     debugLog,
     manualCapture,
+    showWebView,
   } = useScreenshotScheduler();
 
   const handleToggle = () => {
@@ -34,6 +34,51 @@ export const ScreenshotScheduler = () => {
       startSchedule({ url, intervalMinutes, width, height });
     }
   };
+
+  // When running, show fullscreen webview for native screenshot
+  if (showWebView && config) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black">
+        {/* Control bar */}
+        <div className="absolute top-0 left-0 right-0 z-10 bg-background/90 backdrop-blur p-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs font-mono">
+              {captureCount} captures | {lastCapture || 'waiting...'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={manualCapture}>
+              <Zap className="w-4 h-4" />
+            </Button>
+            <Button size="sm" variant="destructive" onClick={stopSchedule}>
+              <X className="w-4 h-4 mr-1" />
+              Stop
+            </Button>
+          </div>
+        </div>
+        
+        {/* Debug log overlay */}
+        {debugLog.length > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 bg-black/80 p-2 max-h-24 overflow-y-auto">
+            <div className="text-xs font-mono text-green-400 space-y-0.5">
+              {debugLog.map((log, i) => (
+                <div key={i}>{log}</div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Fullscreen iframe - native screenshot will capture this */}
+        <iframe
+          src={config.url}
+          className="w-full h-full border-0 pt-10"
+          title="Screenshot Target"
+          onLoad={onWebViewLoad}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background p-4 pb-8">
@@ -57,7 +102,7 @@ export const ScreenshotScheduler = () => {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${isRunning ? 'bg-success animate-pulse' : 'bg-muted-foreground'}`} />
+                <div className={`w-3 h-3 rounded-full ${isRunning ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground'}`} />
                 <span className="text-sm font-medium">
                   {isRunning ? 'Running' : 'Stopped'}
                 </span>
@@ -150,87 +195,38 @@ export const ScreenshotScheduler = () => {
                 />
               </div>
             </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Note: Screenshot captures device screen resolution
+            </p>
           </CardContent>
         </Card>
 
-        {/* Action Buttons */}
-        <div className="flex gap-2">
-          <Button 
-            onClick={handleToggle}
-            className={`flex-1 h-14 text-lg font-medium ${
-              isRunning 
-                ? 'bg-destructive hover:bg-destructive/90' 
-                : 'bg-primary hover:bg-primary/90'
-            }`}
-          >
-            {isRunning ? (
-              <>
-                <Square className="w-5 h-5 mr-2" />
-                Stop
-              </>
-            ) : (
-              <>
-                <Play className="w-5 h-5 mr-2" />
-                Start
-              </>
-            )}
-          </Button>
-          
-          {isRunning && (
-            <Button 
-              onClick={manualCapture}
-              variant="outline"
-              className="h-14 px-4"
-            >
-              <Zap className="w-5 h-5" />
-            </Button>
+        {/* Action Button */}
+        <Button 
+          onClick={handleToggle}
+          className={`w-full h-14 text-lg font-medium ${
+            isRunning 
+              ? 'bg-destructive hover:bg-destructive/90' 
+              : 'bg-primary hover:bg-primary/90'
+          }`}
+        >
+          {isRunning ? (
+            <>
+              <Square className="w-5 h-5 mr-2" />
+              Stop
+            </>
+          ) : (
+            <>
+              <Play className="w-5 h-5 mr-2" />
+              Start
+            </>
           )}
-        </div>
-
-        {/* Debug Log */}
-        {isRunning && debugLog.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Debug Log</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-xs font-mono space-y-1 max-h-32 overflow-y-auto">
-                {debugLog.map((log, i) => (
-                  <div key={i} className="text-muted-foreground">{log}</div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Screenshot container - captures this div */}
-        {isRunning && config && (
-          <div 
-            id="screenshot-container" 
-            style={{ 
-              width: config.width, 
-              height: config.height,
-              position: 'fixed',
-              left: -9999,
-              top: -9999,
-              overflow: 'hidden',
-            }}
-          >
-            <iframe
-              ref={iframeRef}
-              src={config.url}
-              width={config.width}
-              height={config.height}
-              title="Capture WebView"
-              style={{ border: 'none' }}
-              onLoad={onIframeLoad}
-            />
-          </div>
-        )}
+        </Button>
 
         {/* Info */}
         <p className="text-xs text-center text-muted-foreground px-4">
-          Screenshots saved to Pictures/WebScreenshots/screenshot.png
+          Opens fullscreen view and captures using native screenshot.
+          Saved to Pictures/WebScreenshots/screenshot.png
         </p>
       </div>
     </div>
