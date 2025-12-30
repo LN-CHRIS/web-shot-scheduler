@@ -1,7 +1,6 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { toast } from '@/hooks/use-toast';
-import html2canvas from 'html2canvas';
 
 interface SchedulerConfig {
   url: string;
@@ -26,7 +25,6 @@ const ensureFolder = async (): Promise<void> => {
     const msg = error?.message?.toLowerCase() || '';
     if (!msg.includes('exist') && !msg.includes('already')) {
       console.warn('mkdir warning:', error);
-      // Continue anyway - writeFile might still work
     }
   }
 };
@@ -36,42 +34,26 @@ export const useScreenshotScheduler = () => {
   const [lastCapture, setLastCapture] = useState<string | null>(null);
   const [captureCount, setCaptureCount] = useState(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const pendingCaptureRef = useRef<boolean>(false);
 
-  const captureScreenshot = useCallback(async (config: SchedulerConfig) => {
+  // Save base64 screenshot to filesystem
+  const saveScreenshot = useCallback(async (base64Data: string) => {
     try {
-      const container = containerRef.current;
-      if (!container) {
-        throw new Error('WebView container not ready');
-      }
-
-      // Wait a moment for content to render
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Capture the container using html2canvas
-      const canvas = await html2canvas(container, {
-        width: config.width,
-        height: config.height,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        scale: 1,
-        backgroundColor: '#ffffff',
-      });
-
-      // Get raw base64 PNG data (without data URI prefix)
-      const base64Data = canvas.toDataURL('image/png').split(',')[1];
+      // Remove data URI prefix if present
+      const cleanBase64 = base64Data.includes(',') 
+        ? base64Data.split(',')[1] 
+        : base64Data;
       
-      if (!base64Data || base64Data.length < 100) {
-        throw new Error('Screenshot capture produced empty image');
+      if (!cleanBase64 || cleanBase64.length < 100) {
+        throw new Error('Screenshot data is empty or invalid');
       }
       
-      // Ensure folder exists and save file
       await ensureFolder();
       
       await Filesystem.writeFile({
         path: `${FOLDER_PATH}/${FILE_NAME}`,
-        data: base64Data,
+        data: cleanBase64,
         directory: Directory.ExternalStorage,
       });
 
@@ -84,14 +66,70 @@ export const useScreenshotScheduler = () => {
         description: `Saved to ${FOLDER_PATH}/${FILE_NAME} at ${now}`,
       });
       
+      pendingCaptureRef.current = false;
       return true;
     } catch (error) {
-      console.error('Screenshot capture failed:', error);
+      console.error('Screenshot save failed:', error);
+      toast({
+        title: "Save failed",
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: "destructive",
+      });
+      pendingCaptureRef.current = false;
+      return false;
+    }
+  }, []);
+
+  // Listen for postMessage from iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Check if it's a screenshot result
+      if (event.data?.type === 'screenshot-result' && event.data?.data) {
+        console.log('Received screenshot from iframe');
+        saveScreenshot(event.data.data);
+      } else if (event.data?.type === 'screenshot-error') {
+        console.error('Screenshot error from iframe:', event.data.message);
+        toast({
+          title: "Capture failed",
+          description: event.data.message || 'Unknown error from page',
+          variant: "destructive",
+        });
+        pendingCaptureRef.current = false;
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [saveScreenshot]);
+
+  // Request screenshot from iframe via postMessage
+  const captureScreenshot = useCallback(async () => {
+    try {
+      const iframe = iframeRef.current;
+      if (!iframe?.contentWindow) {
+        throw new Error('Iframe not ready');
+      }
+
+      if (pendingCaptureRef.current) {
+        console.log('Capture already pending, skipping');
+        return false;
+      }
+
+      pendingCaptureRef.current = true;
+      
+      // Send capture request to iframe
+      iframe.contentWindow.postMessage({ type: 'capture-screenshot' }, '*');
+      console.log('Sent capture request to iframe');
+      
+      return true;
+    } catch (error) {
+      console.error('Capture request failed:', error);
       toast({
         title: "Capture failed",
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: "destructive",
       });
+      pendingCaptureRef.current = false;
       return false;
     }
   }, []);
@@ -104,13 +142,13 @@ export const useScreenshotScheduler = () => {
     
     // Wait for iframe to load before first capture
     setTimeout(() => {
-      captureScreenshot(config);
-    }, 2000);
+      captureScreenshot();
+    }, 3000);
     
     // Set up interval
     const intervalMs = config.intervalMinutes * 60 * 1000;
     intervalRef.current = setInterval(() => {
-      captureScreenshot(config);
+      captureScreenshot();
     }, intervalMs);
 
     toast({
@@ -125,6 +163,7 @@ export const useScreenshotScheduler = () => {
       intervalRef.current = null;
     }
     setIsRunning(false);
+    pendingCaptureRef.current = false;
     
     toast({
       title: "Schedule stopped",
@@ -138,6 +177,6 @@ export const useScreenshotScheduler = () => {
     captureCount,
     startSchedule,
     stopSchedule,
-    containerRef,
+    iframeRef,
   };
 };
