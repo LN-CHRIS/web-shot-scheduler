@@ -1,5 +1,6 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import html2canvas from 'html2canvas';
 import { toast } from '@/hooks/use-toast';
 
 interface SchedulerConfig {
@@ -21,7 +22,6 @@ const ensureFolder = async (): Promise<void> => {
       recursive: true,
     });
   } catch (error: any) {
-    // Ignore "directory exists" errors
     const msg = error?.message?.toLowerCase() || '';
     if (!msg.includes('exist') && !msg.includes('already')) {
       console.warn('mkdir warning:', error);
@@ -30,22 +30,26 @@ const ensureFolder = async (): Promise<void> => {
 };
 
 export const useScreenshotScheduler = () => {
-  // ALL useState hooks MUST be at the top, in consistent order
   const [isRunning, setIsRunning] = useState(false);
   const [lastCapture, setLastCapture] = useState<string | null>(null);
   const [captureCount, setCaptureCount] = useState(0);
   const [config, setConfig] = useState<SchedulerConfig | null>(null);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
   
-  // ALL useRef hooks
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const pendingCaptureRef = useRef<boolean>(false);
   const iframeLoadedRef = useRef<boolean>(false);
 
+  const addLog = useCallback((message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugLog(prev => [...prev.slice(-9), `[${timestamp}] ${message}`]);
+    console.log(`[Screenshot] ${message}`);
+  }, []);
+
   // Save base64 screenshot to filesystem
   const saveScreenshot = useCallback(async (base64Data: string) => {
     try {
-      // Remove data URI prefix if present
       const cleanBase64 = base64Data.includes(',') 
         ? base64Data.split(',')[1] 
         : base64Data;
@@ -54,6 +58,7 @@ export const useScreenshotScheduler = () => {
         throw new Error('Screenshot data is empty or invalid');
       }
       
+      addLog(`Saving screenshot (${Math.round(cleanBase64.length / 1024)}KB)...`);
       await ensureFolder();
       
       await Filesystem.writeFile({
@@ -65,91 +70,82 @@ export const useScreenshotScheduler = () => {
       const now = new Date().toLocaleTimeString();
       setLastCapture(now);
       setCaptureCount(prev => prev + 1);
+      addLog(`Saved successfully at ${now}`);
       
       toast({
         title: "Screenshot captured",
-        description: `Saved to ${FOLDER_PATH}/${FILE_NAME} at ${now}`,
+        description: `Saved to ${FOLDER_PATH}/${FILE_NAME}`,
       });
       
       pendingCaptureRef.current = false;
       return true;
     } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Save FAILED: ${msg}`);
       console.error('Screenshot save failed:', error);
       toast({
         title: "Save failed",
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: msg,
         variant: "destructive",
       });
       pendingCaptureRef.current = false;
       return false;
     }
-  }, []);
+  }, [addLog]);
 
-  // Listen for postMessage from iframe
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // Check if it's a screenshot result
-      if (event.data?.type === 'screenshot-result' && event.data?.data) {
-        console.log('Received screenshot from iframe');
-        saveScreenshot(event.data.data);
-      } else if (event.data?.type === 'screenshot-error') {
-        console.error('Screenshot error from iframe:', event.data.message);
-        toast({
-          title: "Capture failed",
-          description: event.data.message || 'Unknown error from page',
-          variant: "destructive",
-        });
-        pendingCaptureRef.current = false;
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [saveScreenshot]);
-
-  // Request screenshot from iframe via postMessage
+  // Capture the iframe using html2canvas on a container div
   const captureScreenshot = useCallback(async () => {
+    const container = document.getElementById('screenshot-container');
+    
+    if (!container) {
+      addLog('ERROR: Container not found');
+      return false;
+    }
+
+    if (pendingCaptureRef.current) {
+      addLog('Capture already pending, skipping');
+      return false;
+    }
+
+    pendingCaptureRef.current = true;
+    addLog('Starting capture with html2canvas...');
+    
     try {
-      const iframe = iframeRef.current;
-      if (!iframe?.contentWindow) {
-        throw new Error('Iframe not ready');
-      }
-
-      if (pendingCaptureRef.current) {
-        console.log('Capture already pending, skipping');
-        return false;
-      }
-
-      pendingCaptureRef.current = true;
+      const canvas = await html2canvas(container, {
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#000000',
+      });
       
-      // Send capture request to iframe
-      iframe.contentWindow.postMessage({ type: 'capture-screenshot' }, '*');
-      console.log('Sent capture request to iframe');
+      const dataUrl = canvas.toDataURL('image/png');
+      addLog(`Canvas captured (${canvas.width}x${canvas.height})`);
       
+      await saveScreenshot(dataUrl);
       return true;
     } catch (error) {
-      console.error('Capture request failed:', error);
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Capture FAILED: ${msg}`);
+      console.error('Capture failed:', error);
       toast({
         title: "Capture failed",
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: msg,
         variant: "destructive",
       });
       pendingCaptureRef.current = false;
       return false;
     }
-  }, []);
+  }, [addLog, saveScreenshot]);
 
-  // Called when iframe finishes loading
   const onIframeLoad = useCallback(() => {
-    console.log('Iframe loaded, waiting before first capture...');
+    addLog('Iframe loaded, waiting 3s before capture...');
     iframeLoadedRef.current = true;
     
-    // Capture immediately after load with delay for page to render
     setTimeout(() => {
-      console.log('Triggering first capture');
+      addLog('Triggering first capture');
       captureScreenshot();
-    }, 2000);
-  }, [captureScreenshot]);
+    }, 3000);
+  }, [captureScreenshot, addLog]);
 
   const startSchedule = useCallback(async (newConfig: SchedulerConfig) => {
     if (isRunning) return;
@@ -157,9 +153,10 @@ export const useScreenshotScheduler = () => {
     setConfig(newConfig);
     setIsRunning(true);
     setCaptureCount(0);
+    setDebugLog([]);
     iframeLoadedRef.current = false;
+    addLog(`Starting schedule: ${newConfig.url}`);
     
-    // Set up interval (first capture happens on iframe load)
     const intervalMs = newConfig.intervalMinutes * 60 * 1000;
     intervalRef.current = setInterval(() => {
       if (iframeLoadedRef.current) {
@@ -171,7 +168,7 @@ export const useScreenshotScheduler = () => {
       title: "Schedule started",
       description: `Capturing every ${newConfig.intervalMinutes} minute(s)`,
     });
-  }, [isRunning, captureScreenshot]);
+  }, [isRunning, captureScreenshot, addLog]);
 
   const stopSchedule = useCallback(() => {
     if (intervalRef.current) {
@@ -180,12 +177,27 @@ export const useScreenshotScheduler = () => {
     }
     setIsRunning(false);
     pendingCaptureRef.current = false;
+    addLog('Schedule stopped');
     
     toast({
       title: "Schedule stopped",
       description: `Total captures: ${captureCount}`,
     });
-  }, [captureCount]);
+  }, [captureCount, addLog]);
+
+  const manualCapture = useCallback(() => {
+    if (iframeLoadedRef.current) {
+      addLog('Manual capture triggered');
+      captureScreenshot();
+    } else {
+      addLog('Cannot capture - iframe not loaded');
+      toast({
+        title: "Not ready",
+        description: "Iframe not loaded yet",
+        variant: "destructive",
+      });
+    }
+  }, [captureScreenshot, addLog]);
 
   return {
     isRunning,
@@ -196,5 +208,7 @@ export const useScreenshotScheduler = () => {
     iframeRef,
     onIframeLoad,
     config,
+    debugLog,
+    manualCapture,
   };
 };

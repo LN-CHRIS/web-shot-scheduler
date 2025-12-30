@@ -4,9 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useScreenshotScheduler } from '@/hooks/useScreenshotScheduler';
-import { Camera, Play, Square, Globe, Clock, Maximize2 } from 'lucide-react';
+import { Camera, Play, Square, Globe, Clock, Maximize2, Zap } from 'lucide-react';
 
-const APP_VERSION = 'v0.1';
+const APP_VERSION = 'v0.2';
 
 export const ScreenshotScheduler = () => {
   const [url, setUrl] = useState('https://dakboard.com/screen/uuid/695145eb-102857-3050-96393eac34cb');
@@ -23,6 +23,8 @@ export const ScreenshotScheduler = () => {
     iframeRef,
     onIframeLoad,
     config,
+    debugLog,
+    manualCapture,
   } = useScreenshotScheduler();
 
   const handleToggle = () => {
@@ -151,45 +153,84 @@ export const ScreenshotScheduler = () => {
           </CardContent>
         </Card>
 
-        {/* Action Button */}
-        <Button 
-          onClick={handleToggle}
-          className={`w-full h-14 text-lg font-medium ${
-            isRunning 
-              ? 'bg-destructive hover:bg-destructive/90' 
-              : 'bg-primary hover:bg-primary/90'
-          }`}
-        >
-          {isRunning ? (
-            <>
-              <Square className="w-5 h-5 mr-2" />
-              Stop Schedule
-            </>
-          ) : (
-            <>
-              <Play className="w-5 h-5 mr-2" />
-              Start Schedule
-            </>
+        {/* Action Buttons */}
+        <div className="flex gap-2">
+          <Button 
+            onClick={handleToggle}
+            className={`flex-1 h-14 text-lg font-medium ${
+              isRunning 
+                ? 'bg-destructive hover:bg-destructive/90' 
+                : 'bg-primary hover:bg-primary/90'
+            }`}
+          >
+            {isRunning ? (
+              <>
+                <Square className="w-5 h-5 mr-2" />
+                Stop
+              </>
+            ) : (
+              <>
+                <Play className="w-5 h-5 mr-2" />
+                Start
+              </>
+            )}
+          </Button>
+          
+          {isRunning && (
+            <Button 
+              onClick={manualCapture}
+              variant="outline"
+              className="h-14 px-4"
+            >
+              <Zap className="w-5 h-5" />
+            </Button>
           )}
-        </Button>
+        </div>
 
-        {/* Hidden iframe for PostMessage capture */}
+        {/* Debug Log */}
+        {isRunning && debugLog.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Debug Log</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs font-mono space-y-1 max-h-32 overflow-y-auto">
+                {debugLog.map((log, i) => (
+                  <div key={i} className="text-muted-foreground">{log}</div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Screenshot container - captures this div */}
         {isRunning && config && (
-          <iframe
-            ref={iframeRef}
-            src={config.url}
-            className="fixed -left-[9999px] -top-[9999px]"
-            width={config.width}
-            height={config.height}
-            title="Capture WebView"
-            style={{ border: 'none' }}
-            onLoad={onIframeLoad}
-          />
+          <div 
+            id="screenshot-container" 
+            style={{ 
+              width: config.width, 
+              height: config.height,
+              position: 'fixed',
+              left: -9999,
+              top: -9999,
+              overflow: 'hidden',
+            }}
+          >
+            <iframe
+              ref={iframeRef}
+              src={config.url}
+              width={config.width}
+              height={config.height}
+              title="Capture WebView"
+              style={{ border: 'none' }}
+              onLoad={onIframeLoad}
+            />
+          </div>
         )}
 
         {/* Info */}
         <p className="text-xs text-center text-muted-foreground px-4">
-          Screenshots are saved to your Pictures folder as "web_screenshot.png" and replaced on each capture.
+          Screenshots saved to Pictures/WebScreenshots/screenshot.png
         </p>
       </div>
     </div>
