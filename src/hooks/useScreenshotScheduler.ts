@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import { Screenshot } from 'capacitor-screenshot';
+import WebViewScreenshot from '@/plugins/WebViewScreenshotPlugin';
 import { toast } from '@/hooks/use-toast';
 
 interface SchedulerConfig {
@@ -47,49 +47,18 @@ export const useScreenshotScheduler = () => {
     console.log(`[Screenshot] ${message}`);
   }, []);
 
-  // Resize image to target dimensions
-  const resizeImage = useCallback(async (base64Data: string, targetWidth: number, targetHeight: number): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Could not get canvas context'));
-          return;
-        }
-        // Draw and scale image to target size
-        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-        // Get base64 without data URL prefix
-        const resizedBase64 = canvas.toDataURL('image/png').split(',')[1];
-        resolve(resizedBase64);
-      };
-      img.onerror = () => reject(new Error('Failed to load image for resize'));
-      const prefix = base64Data.includes(',') ? '' : 'data:image/png;base64,';
-      img.src = prefix + base64Data;
-    });
-  }, []);
-
-  // Save base64 screenshot to filesystem
-  const saveScreenshot = useCallback(async (base64Data: string, width?: number, height?: number) => {
+  // Save base64 screenshot to filesystem (no resizing needed - native captures at exact size)
+  const saveScreenshot = useCallback(async (base64Data: string, width: number, height: number) => {
     try {
-      let cleanBase64 = base64Data.includes(',') 
+      const cleanBase64 = base64Data.includes(',') 
         ? base64Data.split(',')[1] 
         : base64Data;
       
       if (!cleanBase64 || cleanBase64.length < 100) {
         throw new Error('Screenshot data is empty or invalid');
       }
-
-      // Resize if dimensions provided
-      if (width && height) {
-        addLog(`Resizing to ${width}x${height}...`);
-        cleanBase64 = await resizeImage(base64Data, width, height);
-      }
       
-      addLog(`Saving (${Math.round(cleanBase64.length / 1024)}KB)...`);
+      addLog(`Saving ${width}x${height} (${Math.round(cleanBase64.length / 1024)}KB)...`);
       await ensureFolder();
       
       await Filesystem.writeFile({
@@ -122,30 +91,35 @@ export const useScreenshotScheduler = () => {
       pendingCaptureRef.current = false;
       return false;
     }
-  }, [addLog, resizeImage]);
+  }, [addLog]);
 
-  // Capture using native screenshot plugin
+  // Capture using custom off-screen WebView plugin
   const captureScreenshot = useCallback(async () => {
+    if (!config) {
+      addLog('No config set');
+      return false;
+    }
+
     if (pendingCaptureRef.current) {
       addLog('Capture pending, skipping');
       return false;
     }
 
-    if (!webViewReadyRef.current) {
-      addLog('WebView not ready');
-      return false;
-    }
-
     pendingCaptureRef.current = true;
-    addLog('Taking native screenshot...');
+    addLog(`Capturing ${config.width}x${config.height}...`);
     
     try {
-      const result = await Screenshot.take();
+      // Use custom plugin that creates off-screen WebView at exact dimensions
+      const result = await WebViewScreenshot.capture({
+        url: config.url,
+        width: config.width,
+        height: config.height,
+        delayMs: 3000, // Wait 3s for page to fully render
+      });
       
       if (result?.base64) {
-        addLog('Screenshot captured');
-        // Pass config dimensions for resizing
-        await saveScreenshot(result.base64, config?.width, config?.height);
+        addLog(`Captured ${result.width}x${result.height}`);
+        await saveScreenshot(result.base64, result.width, result.height);
         return true;
       } else {
         throw new Error('No screenshot data returned');
@@ -164,37 +138,30 @@ export const useScreenshotScheduler = () => {
     }
   }, [addLog, saveScreenshot, config]);
 
-  const onWebViewLoad = useCallback(() => {
-    addLog('WebView loaded, waiting 3s...');
-    webViewReadyRef.current = true;
-    
-    setTimeout(() => {
-      addLog('First capture...');
-      captureScreenshot();
-    }, 3000);
-  }, [captureScreenshot, addLog]);
-
   const startSchedule = useCallback(async (newConfig: SchedulerConfig) => {
     if (isRunning) return;
 
     setConfig(newConfig);
     setIsRunning(true);
-    setShowWebView(true);
+    setShowWebView(false); // No visible WebView needed - capture is off-screen
     setCaptureCount(0);
     setDebugLog([]);
-    webViewReadyRef.current = false;
-    addLog(`Starting: ${newConfig.url}`);
+    addLog(`Starting: ${newConfig.url} at ${newConfig.width}x${newConfig.height}`);
     
+    // Trigger first capture immediately
+    setTimeout(() => {
+      captureScreenshot();
+    }, 500);
+    
+    // Set up interval for subsequent captures
     const intervalMs = newConfig.intervalMinutes * 60 * 1000;
     intervalRef.current = setInterval(() => {
-      if (webViewReadyRef.current) {
-        captureScreenshot();
-      }
+      captureScreenshot();
     }, intervalMs);
 
     toast({
       title: "Schedule started",
-      description: `Every ${newConfig.intervalMinutes} min`,
+      description: `Capturing ${newConfig.width}x${newConfig.height} every ${newConfig.intervalMinutes} min`,
     });
   }, [isRunning, captureScreenshot, addLog]);
 
@@ -206,7 +173,6 @@ export const useScreenshotScheduler = () => {
     setIsRunning(false);
     setShowWebView(false);
     pendingCaptureRef.current = false;
-    webViewReadyRef.current = false;
     addLog('Stopped');
     
     toast({
@@ -216,18 +182,18 @@ export const useScreenshotScheduler = () => {
   }, [captureCount, addLog]);
 
   const manualCapture = useCallback(() => {
-    if (webViewReadyRef.current) {
+    if (config) {
       addLog('Manual capture');
       captureScreenshot();
     } else {
-      addLog('Not ready');
+      addLog('No config set');
       toast({
-        title: "Not ready",
-        description: "WebView not loaded",
+        title: "Not configured",
+        description: "Start the scheduler first",
         variant: "destructive",
       });
     }
-  }, [captureScreenshot, addLog]);
+  }, [captureScreenshot, addLog, config]);
 
   return {
     isRunning,
@@ -235,7 +201,6 @@ export const useScreenshotScheduler = () => {
     captureCount,
     startSchedule,
     stopSchedule,
-    onWebViewLoad,
     config,
     debugLog,
     manualCapture,
